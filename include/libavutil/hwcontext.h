@@ -36,6 +36,7 @@ enum AVHWDeviceType {
     AV_HWDEVICE_TYPE_DRM,
     AV_HWDEVICE_TYPE_OPENCL,
     AV_HWDEVICE_TYPE_MEDIACODEC,
+    AV_HWDEVICE_TYPE_VULKAN,
 };
 
 typedef struct AVHWDeviceInternal AVHWDeviceInternal;
@@ -237,21 +238,18 @@ typedef struct AVHWFramesContext {
  */
 enum AVHWDeviceType av_hwdevice_find_type_by_name(const char *name);
 
-/** Get the string name of an AVHWDeviceType.
+/** 获取AVHWDeviceType的字符串名称。
  *
- * @param type Type from enum AVHWDeviceType.
- * @return Pointer to a static string containing the name, or NULL if the type
- *         is not valid.
+ * @param 枚举AVHWDeviceType中的type类型。
+ * @return 指向包含名称的静态字符串的指针，如果类型无效，则为NULL。
  */
 const char *av_hwdevice_get_type_name(enum AVHWDeviceType type);
 
 /**
- * Iterate over supported device types.
+ * 遍历支持的设备类型。
  *
- * @param type AV_HWDEVICE_TYPE_NONE initially, then the previous type
- *             returned by this function in subsequent iterations.
- * @return The next usable device type from enum AVHWDeviceType, or
- *         AV_HWDEVICE_TYPE_NONE if there are no more.
+ * @param type 首先是AV_HWDEVICE_TYPE_NONE，然后是该函数在后续迭代中返回的前一个类型。
+ * @return 枚举中下一个可用的设备类型为AVHWDeviceType，如果没有，则为AV_HWDEVICE_TYPE_NONE。
  */
 enum AVHWDeviceType av_hwdevice_iterate_types(enum AVHWDeviceType prev);
 
@@ -275,29 +273,26 @@ AVBufferRef *av_hwdevice_ctx_alloc(enum AVHWDeviceType type);
 int av_hwdevice_ctx_init(AVBufferRef *ref);
 
 /**
- * Open a device of the specified type and create an AVHWDeviceContext for it.
+ * 打开指定类型的设备，并为其创建AVHWDeviceContext。
  *
- * This is a convenience function intended to cover the simple cases. Callers
- * who need to fine-tune device creation/management should open the device
- * manually and then wrap it in an AVHWDeviceContext using
- * av_hwdevice_ctx_alloc()/av_hwdevice_ctx_init().
+ * 这是一个方便的函数，旨在涵盖简单的情况。
+ * 需要优化设备创建/管理的调用者应该手动打开设备，
+ * 然后使用av_hwdevice_ctx_alloc()/av_hwdevice_ctx_init()将其包装在AVHWDeviceContext中。
  *
  * The returned context is already initialized and ready for use, the caller
  * should not call av_hwdevice_ctx_init() on it. The user_opaque/free fields of
  * the created AVHWDeviceContext are set by this function and should not be
  * touched by the caller.
  *
- * @param device_ctx On success, a reference to the newly-created device context
- *                   will be written here. The reference is owned by the caller
- *                   and must be released with av_buffer_unref() when no longer
- *                   needed. On failure, NULL will be written to this pointer.
- * @param type The type of the device to create.
- * @param device A type-specific string identifying the device to open.
- * @param opts A dictionary of additional (type-specific) options to use in
- *             opening the device. The dictionary remains owned by the caller.
- * @param flags currently unused
+ * @param device_ctx 如果成功，将在这里写入对新创建的设备上下文的引用。
+ *                   引用由调用者拥有，当不再需要时，必须使用av_buffer_unref()释放它。
+ *                   如果失败，NULL将写入此指针。
+ * @param type       要创建的设备的类型。
+ * @param device     要创建的设备的类型。标识要打开的设备的类型特定字符串。
+ * @param opts       打开设备时使用的附加（类型特定）选项的字典。词典仍归调用者所有。
+ * @param flags      当前未使用
  *
- * @return 0 on success, a negative AVERROR code on failure.
+ * @return           成功时为0，失败时为负AVERROR代码。
  */
 int av_hwdevice_ctx_create(AVBufferRef **device_ctx, enum AVHWDeviceType type,
                            const char *device, AVDictionary *opts, int flags);
@@ -327,6 +322,26 @@ int av_hwdevice_ctx_create_derived(AVBufferRef **dst_ctx,
                                    enum AVHWDeviceType type,
                                    AVBufferRef *src_ctx, int flags);
 
+/**
+ * Create a new device of the specified type from an existing device.
+ *
+ * This function performs the same action as av_hwdevice_ctx_create_derived,
+ * however, it is able to set options for the new device to be derived.
+ *
+ * @param dst_ctx On success, a reference to the newly-created
+ *                AVHWDeviceContext.
+ * @param type    The type of the new device to create.
+ * @param src_ctx A reference to an existing AVHWDeviceContext which will be
+ *                used to create the new device.
+ * @param options Options for the new device to create, same format as in
+ *                av_hwdevice_ctx_create.
+ * @param flags   Currently unused; should be set to zero.
+ * @return        Zero on success, a negative AVERROR code on failure.
+ */
+int av_hwdevice_ctx_create_derived_opts(AVBufferRef **dst_ctx,
+                                        enum AVHWDeviceType type,
+                                        AVBufferRef *src_ctx,
+                                        AVDictionary *options, int flags);
 
 /**
  * Allocate an AVHWFramesContext tied to a given device context.
@@ -361,32 +376,21 @@ int av_hwframe_ctx_init(AVBufferRef *ref);
 int av_hwframe_get_buffer(AVBufferRef *hwframe_ctx, AVFrame *frame, int flags);
 
 /**
- * Copy data to or from a hw surface. At least one of dst/src must have an
- * AVHWFramesContext attached.
+ * 将数据复制到硬件表面或从硬件表面复制数据。dst/src中必须至少有一个附加了AVHWFramesContext。
  *
- * If src has an AVHWFramesContext attached, then the format of dst (if set)
- * must use one of the formats returned by av_hwframe_transfer_get_formats(src,
- * AV_HWFRAME_TRANSFER_DIRECTION_FROM).
- * If dst has an AVHWFramesContext attached, then the format of src must use one
- * of the formats returned by av_hwframe_transfer_get_formats(dst,
- * AV_HWFRAME_TRANSFER_DIRECTION_TO)
+ * 如果src附加了AVHWFramesContext，那么dst的格式(如果设置了)必须使用av_hwframe_transfer_get_formats(src, AV_HWFRAME_TRANSFER_DIRECTION_FROM)返回的格式之一。
+ * 如果dst附加了AVHWFramesContext，那么src的格式必须使用av_hwframe_transfer_get_formats(dst, AV_HWFRAME_TRANSFER_DIRECTION_TO)返回的格式之一。
  *
- * dst may be "clean" (i.e. with data/buf pointers unset), in which case the
- * data buffers will be allocated by this function using av_frame_get_buffer().
- * If dst->format is set, then this format will be used, otherwise (when
- * dst->format is AV_PIX_FMT_NONE) the first acceptable format will be chosen.
+ * DST可能是“干净的”(即data/buf指针未设置)，在这种情况下，数据缓冲区将由该函数使用av_frame_get_buffer()分配。
+ * 如果dst->格式已设置，则将使用此格式，否则(当dst->格式为AV_PIX_FMT_NONE时)将选择第一个可接受的格式。
  *
- * The two frames must have matching allocated dimensions (i.e. equal to
- * AVHWFramesContext.width/height), since not all device types support
- * transferring a sub-rectangle of the whole surface. The display dimensions
- * (i.e. AVFrame.width/height) may be smaller than the allocated dimensions, but
- * also have to be equal for both frames. When the display dimensions are
- * smaller than the allocated dimensions, the content of the padding in the
- * destination frame is unspecified.
+ * 两个帧必须有匹配的分配尺寸(即等于AVHWFramesContext.width/height)，因为不是所有的设备类型都支持传输整个表面的子矩形。
+ * 显示尺寸(即AVFrame.width/height)可以小于分配的尺寸，但也必须为两个帧相等。
+ * 当显示尺寸小于分配的尺寸时，将不指定目标帧中的填充内容
  *
  * @param dst the destination frame. dst is not touched on failure.
  * @param src the source frame.
- * @param flags currently unused, should be set to zero
+ * @param flags 当前未使用，应设置为零
  * @return 0 on success, a negative AVERROR error code on failure.
  */
 int av_hwframe_transfer_data(AVFrame *dst, const AVFrame *src, int flags);
@@ -549,6 +553,10 @@ enum {
  * A return value of AVERROR(ENOSYS) indicates that the mapping is not
  * possible with the given arguments and hwframe setup, while other return
  * values indicate that it failed somehow.
+ *
+ * On failure, the destination frame will be left blank, except for the
+ * hw_frames_ctx/format fields thay may have been set by the caller - those will
+ * be preserved as they were.
  *
  * @param dst Destination frame, to contain the mapping.
  * @param src Source frame, to be mapped.

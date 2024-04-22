@@ -27,6 +27,8 @@
 #include <errno.h>
 #include <stddef.h>
 
+#include "macros.h"
+
 /**
  * @addtogroup lavu_error
  *
@@ -83,15 +85,14 @@
 #define AV_ERROR_MAX_STRING_SIZE 64
 
 /**
- * Put a description of the AVERROR code errnum in errbuf.
- * In case of failure the global variable errno is set to indicate the
- * error. Even in case of failure av_strerror() will print a generic
- * error message indicating the errnum provided to errbuf.
+ * 将AVERROR代码errnum的描述放在errbuf中。
+ * 在失败的情况下，设置全局变量errno来指示错误。
+ * 即使在失败的情况下，av_strerror()也会打印一个通用的错误消息，指示提供给errbuf的errnum。
  *
- * @param errnum      error code to describe
- * @param errbuf      buffer to which description is written
- * @param errbuf_size the size in bytes of errbuf
- * @return 0 on success, a negative value if a description for errnum
+ * @param errnum      要描述的错误代码
+ * @param errbuf      写入描述的缓冲区
+ * @param errbuf_size errbuf的大小，以字节为单位
+ * @return 成功时为0，如果是errnum的描述则为负值
  * cannot be found
  */
 int av_strerror(int errnum, char *errbuf, size_t errbuf_size);

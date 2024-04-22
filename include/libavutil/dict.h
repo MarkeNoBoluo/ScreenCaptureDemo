@@ -32,8 +32,6 @@
 
 #include <stdint.h>
 
-#include "version.h"
-
 /**
  * @addtogroup lavu_dict AVDictionary
  * @ingroup lavu_data
@@ -66,17 +64,16 @@
  @endcode
  */
 
-#define AV_DICT_MATCH_CASE      1   /**< Only get an entry with exact-case key match. Only relevant in av_dict_get(). */
-#define AV_DICT_IGNORE_SUFFIX   2   /**< Return first entry in a dictionary whose first part corresponds to the search key,
-                                         ignoring the suffix of the found key string. Only relevant in av_dict_get(). */
-#define AV_DICT_DONT_STRDUP_KEY 4   /**< Take ownership of a key that's been
+#define AV_DICT_MATCH_CASE      1   /**< 只获取具有精确大小写键匹配的条目。只与av_dict_get()相关。 */
+#define AV_DICT_IGNORE_SUFFIX   2   /**< 返回字典中第一部分与搜索键对应的第一个条目，
+                                         忽略找到的键字符串的后缀。只与av_dict_get()相关。 */
+#define AV_DICT_DONT_STRDUP_KEY 4   /**< Take ownership of a key that's been 获取用av_malloc()或其他内存分配函数分配的键的所有权。
                                          allocated with av_malloc() or another memory allocation function. */
-#define AV_DICT_DONT_STRDUP_VAL 8   /**< Take ownership of a value that's been
+#define AV_DICT_DONT_STRDUP_VAL 8   /**< Take ownership of a value that's been 获取用av_malloc()或其他内存分配函数分配的值的所有权。
                                          allocated with av_malloc() or another memory allocation function. */
-#define AV_DICT_DONT_OVERWRITE 16   ///< Don't overwrite existing entries.
-#define AV_DICT_APPEND         32   /**< If the entry already exists, append to it.  Note that no
-                                      delimiter is added, the strings are simply concatenated. */
-#define AV_DICT_MULTIKEY       64   /**< Allow to store several equal keys in the dictionary */
+#define AV_DICT_DONT_OVERWRITE 16   ///< 不要覆盖现有的条目。
+#define AV_DICT_APPEND         32   /**< 如果条目已经存在，则向其追加。注意，没有添加分隔符，字符串只是连接在一起。 */
+#define AV_DICT_MULTIKEY       64   /**< 允许在字典中存储几个相等的键 */
 
 typedef struct AVDictionaryEntry {
     char *key;
@@ -86,7 +83,7 @@ typedef struct AVDictionaryEntry {
 typedef struct AVDictionary AVDictionary;
 
 /**
- * Get a dictionary entry with matching key.
+ * 获取具有匹配键的字典条目。
  *
  * The returned entry key or value must not be changed, or it will
  * cause undefined behavior.
@@ -112,20 +109,17 @@ AVDictionaryEntry *av_dict_get(const AVDictionary *m, const char *key,
 int av_dict_count(const AVDictionary *m);
 
 /**
- * Set the given entry in *pm, overwriting an existing entry.
+ * 在*pm中设置给定的条目，覆盖现有的条目。
  *
- * Note: If AV_DICT_DONT_STRDUP_KEY or AV_DICT_DONT_STRDUP_VAL is set,
- * these arguments will be freed on error.
+ * 注意:如果AV_DICT_DONT_STRDUP_KEY或AV_DICT_DONT_STRDUP_VAL被设置，这些参数将在错误时被释放。
  *
- * Warning: Adding a new entry to a dictionary invalidates all existing entries
- * previously returned with av_dict_get.
+ * 警告：向字典中添加新条目会使以前使用av_dict_get返回的所有现有条目无效。
  *
- * @param pm pointer to a pointer to a dictionary struct. If *pm is NULL
- * a dictionary struct is allocated and put in *pm.
- * @param key entry key to add to *pm (will either be av_strduped or added as a new key depending on flags)
- * @param value entry value to add to *pm (will be av_strduped or added as a new key depending on flags).
- *        Passing a NULL value will cause an existing entry to be deleted.
- * @return >= 0 on success otherwise an error code <0
+ * @param pm    指向指向字典结构的指针的指针。如果*pm为NULL，则分配字典结构并将其放入*pm。
+ * @param key   要添加到*pm的输入键(根据标志的不同，可以是av_strduped，也可以作为新键添加)
+ * @param value 要添加到*pm的条目值（将被av_strduped或作为新键添加，具体取决于标志）.
+ *        传递NULL值将导致删除现有条目。
+ * @return >成功时=0，否则错误代码<0
  */
 int av_dict_set(AVDictionary **pm, const char *key, const char *value, int flags);
 
@@ -170,8 +164,7 @@ int av_dict_parse_string(AVDictionary **pm, const char *str,
 int av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags);
 
 /**
- * Free all the memory allocated for an AVDictionary struct
- * and all keys and values.
+ * 释放分配给AVDictionary结构以及所有键和值的所有内存。
  */
 void av_dict_free(AVDictionary **m);
 

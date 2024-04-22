@@ -30,6 +30,7 @@
 
 #include "avutil.h"
 #include "buffer.h"
+#include "channel_layout.h"
 #include "dict.h"
 #include "rational.h"
 #include "samplefmt.h"
@@ -142,28 +143,11 @@ enum AVFrameSideDataType {
      */
     AV_FRAME_DATA_ICC_PROFILE,
 
-#if FF_API_FRAME_QP
-    /**
-     * Implementation-specific description of the format of AV_FRAME_QP_TABLE_DATA.
-     * The contents of this side data are undocumented and internal; use
-     * av_frame_set_qp_table() and av_frame_get_qp_table() to access this in a
-     * meaningful way instead.
-     */
-    AV_FRAME_DATA_QP_TABLE_PROPERTIES,
-
-    /**
-     * Raw QP table data. Its format is described by
-     * AV_FRAME_DATA_QP_TABLE_PROPERTIES. Use av_frame_set_qp_table() and
-     * av_frame_get_qp_table() to access this instead.
-     */
-    AV_FRAME_DATA_QP_TABLE_DATA,
-#endif
-
     /**
      * Timecode which conforms to SMPTE ST 12-1. The data is an array of 4 uint32_t
      * where the first uint32_t describes how many (1-3) of the other timecodes are used.
-     * The timecode format is described in the av_timecode_get_smpte_from_framenum()
-     * function in libavutil/timecode.c.
+     * The timecode format is described in the documentation of av_timecode_get_smpte_from_framenum()
+     * function in libavutil/timecode.h.
      */
     AV_FRAME_DATA_S12M_TIMECODE,
 
@@ -179,6 +163,52 @@ enum AVFrameSideDataType {
      * array element is implied by AVFrameSideData.size / AVRegionOfInterest.self_size.
      */
     AV_FRAME_DATA_REGIONS_OF_INTEREST,
+
+    /**
+     * Encoding parameters for a video frame, as described by AVVideoEncParams.
+     */
+    AV_FRAME_DATA_VIDEO_ENC_PARAMS,
+
+    /**
+     * User data unregistered metadata associated with a video frame.
+     * This is the H.26[45] UDU SEI message, and shouldn't be used for any other purpose
+     * The data is stored as uint8_t in AVFrameSideData.data which is 16 bytes of
+     * uuid_iso_iec_11578 followed by AVFrameSideData.size - 16 bytes of user_data_payload_byte.
+     */
+    AV_FRAME_DATA_SEI_UNREGISTERED,
+
+    /**
+     * Film grain parameters for a frame, described by AVFilmGrainParams.
+     * Must be present for every frame which should have film grain applied.
+     */
+    AV_FRAME_DATA_FILM_GRAIN_PARAMS,
+
+    /**
+     * Bounding boxes for object detection and classification,
+     * as described by AVDetectionBBoxHeader.
+     */
+    AV_FRAME_DATA_DETECTION_BBOXES,
+
+    /**
+     * Dolby Vision RPU raw data, suitable for passing to x265
+     * or other libraries. Array of uint8_t, with NAL emulation
+     * bytes intact.
+     */
+    AV_FRAME_DATA_DOVI_RPU_BUFFER,
+
+    /**
+     * Parsed Dolby Vision metadata, suitable for passing to a software
+     * implementation. The payload is the AVDOVIMetadata struct defined in
+     * libavutil/dovi_meta.h.
+     */
+    AV_FRAME_DATA_DOVI_METADATA,
+
+    /**
+     * HDR Vivid dynamic metadata associated with a video frame. The payload is
+     * an AVDynamicHDRVivid type and contains information for color
+     * volume transform - CUVA 005.1-2021.
+     */
+    AV_FRAME_DATA_DYNAMIC_HDR_VIVID,
 };
 
 enum AVActiveFormatDescription {
@@ -201,7 +231,7 @@ enum AVActiveFormatDescription {
 typedef struct AVFrameSideData {
     enum AVFrameSideDataType type;
     uint8_t *data;
-    int      size;
+    size_t   size;
     AVDictionary *metadata;
     AVBufferRef *buf;
 } AVFrameSideData;
@@ -263,27 +293,22 @@ typedef struct AVRegionOfInterest {
 } AVRegionOfInterest;
 
 /**
- * This structure describes decoded (raw) audio or video data.
+ * 此结构描述解码（原始）音频或视频数据。
  *
- * AVFrame must be allocated using av_frame_alloc(). Note that this only
- * allocates the AVFrame itself, the buffers for the data must be managed
- * through other means (see below).
- * AVFrame must be freed with av_frame_free().
+ * AVFrame必须使用av_frame_alloc（）分配。
+ * 注意，这只分配AVFrame本身，数据的缓冲区必须通过其他方式进行管理（见下文）。
+ * 必须使用av_frame_free（）释放AVFrame。
  *
- * AVFrame is typically allocated once and then reused multiple times to hold
- * different data (e.g. a single AVFrame to hold frames received from a
- * decoder). In such a case, av_frame_unref() will free any references held by
- * the frame and reset it to its original clean state before it
- * is reused again.
+ * AVFrame通常分配一次，然后多次重复使用，以保存不同的数据（例如，单个AVFrame用于保存从解码器接收的帧）。
+ * 在这种情况下，av_frame_unref（）将释放帧持有的所有引用，并将其重置为原始干净状态，然后再重新使用。
  *
- * The data described by an AVFrame is usually reference counted through the
- * AVBuffer API. The underlying buffer references are stored in AVFrame.buf /
- * AVFrame.extended_buf. An AVFrame is considered to be reference counted if at
- * least one reference is set, i.e. if AVFrame.buf[0] != NULL. In such a case,
- * every single data plane must be contained in one of the buffers in
- * AVFrame.buf or AVFrame.extended_buf.
- * There may be a single buffer for all the data, or one separate buffer for
- * each plane, or anything in between.
+ * AVFrame描述的数据通常通过AVBuffer API进行引用计数。
+ * 底层缓冲区引用存储在AVFrame中。
+ * buf / AVFrame.extended_buf。
+ * 如果至少设置了一个引用，即如果AVFrame，则认为该AVFrame已被引用计数。
+ * buf[0]! = NULL。在这种情况下，每个数据平面都必须包含在AVFrame中的一个缓冲区中。
+ * 缓冲区或AVFrame.extended_buf。
+ * 所有数据可能有一个缓冲区，或者每个平面有一个单独的缓冲区，或两者之间的任何缓冲区。
  *
  * sizeof(AVFrame) is not a part of the public ABI, so new fields may be added
  * to the end with a minor bump.
@@ -296,21 +321,32 @@ typedef struct AVFrame {
 #define AV_NUM_DATA_POINTERS 8
     /**
      * pointer to the picture/channel planes.
-     * This might be different from the first allocated byte
+     * This might be different from the first allocated byte. For video,
+     * it could even point to the end of the image data.
+     *
+     * All pointers in data and extended_data must point into one of the
+     * AVBufferRef in buf or extended_buf.
      *
      * Some decoders access areas outside 0,0 - width,height, please
      * see avcodec_align_dimensions2(). Some filters and swscale can read
      * up to 16 bytes beyond the planes, if these filters are to be used,
      * then 16 extra bytes must be allocated.
      *
-     * NOTE: Except for hwaccel formats, pointers not needed by the format
-     * MUST be set to NULL.
+     * NOTE: Pointers not needed by the format MUST be set to NULL.
+     *
+     * @attention In case of video, the data[] pointers can point to the
+     * end of image data in order to reverse line order, when used in
+     * combination with negative values in the linesize[] array.
      */
     uint8_t *data[AV_NUM_DATA_POINTERS];
 
     /**
-     * For video, size in bytes of each picture line.
-     * For audio, size in bytes of each plane.
+     * For video, a positive or negative value, which is typically indicating
+     * the size in bytes of each picture line, but it can also be:
+     * - the negative byte size of lines for vertical flipping
+     *   (with data[n] pointing to the end of the data
+     * - a positive or negative multiple of the byte size as for accessing
+     *   even and odd fields of a frame (possibly flipped)
      *
      * For audio, only linesize[0] may be set. For planar audio, each channel
      * plane must be the same size.
@@ -322,6 +358,9 @@ typedef struct AVFrame {
      *
      * @note The linesize may be larger than the size of usable data -- there
      * may be extra padding present for performance reasons.
+     *
+     * @attention In case of video, line size values can be negative to achieve
+     * a vertically inverted iteration over image lines.
      */
     int linesize[AV_NUM_DATA_POINTERS];
 
@@ -373,35 +412,31 @@ typedef struct AVFrame {
     int key_frame;
 
     /**
-     * Picture type of the frame.
+     * 框架的图片类型。
      */
     enum AVPictureType pict_type;
 
     /**
-     * Sample aspect ratio for the video frame, 0/1 if unknown/unspecified.
+     * 视频帧的采样纵横比，如果未知/未指定，则为0/1。
      */
     AVRational sample_aspect_ratio;
 
     /**
-     * Presentation timestamp in time_base units (time when frame should be shown to user).
+     * 以time_base单元表示的时间戳(帧应该显示给用户的时间)。
      */
     int64_t pts;
 
-#if FF_API_PKT_PTS
     /**
-     * PTS copied from the AVPacket that was decoded to produce this frame.
-     * @deprecated use the pts field instead
-     */
-    attribute_deprecated
-    int64_t pkt_pts;
-#endif
-
-    /**
-     * DTS copied from the AVPacket that triggered returning this frame. (if frame threading isn't used)
-     * This is also the Presentation time of this AVFrame calculated from
-     * only AVPacket.dts values without pts values.
+     * 从触发返回此帧的AVPacket中复制DTS。(如果不使用帧线程)
+     * 这也是该AVFrame的呈现时间，仅从AVPacket计算。没有PTS值的DTS值。
      */
     int64_t pkt_dts;
+
+    /**
+     * 此帧中时间戳的时间基数。
+     * 将来，这个字段可能在解码器或过滤器输出的帧上设置，但在默认情况下，它的值将在编码器或过滤器的输入上被忽略。
+     */
+    AVRational time_base;
 
     /**
      * picture number in bitstream order
@@ -421,14 +456,6 @@ typedef struct AVFrame {
      * for some private data of the user
      */
     void *opaque;
-
-#if FF_API_ERROR_FRAME
-    /**
-     * @deprecated unused
-     */
-    attribute_deprecated
-    uint64_t error[AV_NUM_DATA_POINTERS];
-#endif
 
     /**
      * When decoding, this signals how much the picture must be delayed.
@@ -466,16 +493,20 @@ typedef struct AVFrame {
      */
     int sample_rate;
 
+#if FF_API_OLD_CHANNEL_LAYOUT
     /**
      * Channel layout of the audio data.
+     * @deprecated use ch_layout instead
      */
+    attribute_deprecated
     uint64_t channel_layout;
+#endif
 
     /**
-     * AVBuffer references backing the data for this frame. If all elements of
-     * this array are NULL, then this frame is not reference counted. This array
-     * must be filled contiguously -- if buf[i] is non-NULL then buf[j] must
-     * also be non-NULL for all j < i.
+     * AVBuffer references backing the data for this frame. All the pointers in
+     * data and extended_data must point inside one of the buffers in buf or
+     * extended_buf. This array must be filled contiguously -- if buf[i] is
+     * non-NULL then buf[j] must also be non-NULL for all j < i.
      *
      * There may be at most one AVBuffer per data plane, so for video this array
      * always contains all the references. For planar audio with more than
@@ -559,15 +590,14 @@ typedef struct AVFrame {
     int64_t best_effort_timestamp;
 
     /**
-     * reordered pos from the last AVPacket that has been input into the decoder
+     * 从已输入到解码器的最后一个AVPacket中重新排序的pos
      * - encoding: unused
      * - decoding: Read by user.
      */
     int64_t pkt_pos;
 
     /**
-     * duration of the corresponding packet, expressed in
-     * AVStream->time_base units, 0 if unknown.
+     * 相应数据包的持续时间，以AVStream->time_base单位表示，如果未知，则为0。
      * - encoding: unused
      * - decoding: Read by user.
      */
@@ -593,40 +623,25 @@ typedef struct AVFrame {
 #define FF_DECODE_ERROR_CONCEALMENT_ACTIVE  4
 #define FF_DECODE_ERROR_DECODE_SLICES       8
 
+#if FF_API_OLD_CHANNEL_LAYOUT
     /**
      * number of audio channels, only used for audio.
      * - encoding: unused
      * - decoding: Read by user.
+     * @deprecated use ch_layout instead
      */
+    attribute_deprecated
     int channels;
+#endif
 
     /**
-     * size of the corresponding packet containing the compressed
-     * frame.
-     * It is set to a negative value if unknown.
+     * 包含压缩帧的相应数据包的大小。
+     * 如果未知，则将其设置为负值。
      * - encoding: unused
      * - decoding: set by libavcodec, read by user.
      */
     int pkt_size;
 
-#if FF_API_FRAME_QP
-    /**
-     * QP table
-     */
-    attribute_deprecated
-    int8_t *qscale_table;
-    /**
-     * QP store stride
-     */
-    attribute_deprecated
-    int qstride;
-
-    attribute_deprecated
-    int qscale_type;
-
-    attribute_deprecated
-    AVBufferRef *qp_table_buf;
-#endif
     /**
      * For hwaccel-format frames, this should be a reference to the
      * AVHWFramesContext describing the frame.
@@ -672,89 +687,37 @@ typedef struct AVFrame {
      * for the target frame's private_ref field.
      */
     AVBufferRef *private_ref;
+
+    /**
+     * Channel layout of the audio data.
+     */
+    AVChannelLayout ch_layout;
 } AVFrame;
 
-#if FF_API_FRAME_GET_SET
-/**
- * Accessors for some AVFrame fields. These used to be provided for ABI
- * compatibility, and do not need to be used anymore.
- */
-attribute_deprecated
-int64_t av_frame_get_best_effort_timestamp(const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_best_effort_timestamp(AVFrame *frame, int64_t val);
-attribute_deprecated
-int64_t av_frame_get_pkt_duration         (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_pkt_duration         (AVFrame *frame, int64_t val);
-attribute_deprecated
-int64_t av_frame_get_pkt_pos              (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_pkt_pos              (AVFrame *frame, int64_t val);
-attribute_deprecated
-int64_t av_frame_get_channel_layout       (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_channel_layout       (AVFrame *frame, int64_t val);
-attribute_deprecated
-int     av_frame_get_channels             (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_channels             (AVFrame *frame, int     val);
-attribute_deprecated
-int     av_frame_get_sample_rate          (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_sample_rate          (AVFrame *frame, int     val);
-attribute_deprecated
-AVDictionary *av_frame_get_metadata       (const AVFrame *frame);
-attribute_deprecated
-void          av_frame_set_metadata       (AVFrame *frame, AVDictionary *val);
-attribute_deprecated
-int     av_frame_get_decode_error_flags   (const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_decode_error_flags   (AVFrame *frame, int     val);
-attribute_deprecated
-int     av_frame_get_pkt_size(const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_pkt_size(AVFrame *frame, int val);
-#if FF_API_FRAME_QP
-attribute_deprecated
-int8_t *av_frame_get_qp_table(AVFrame *f, int *stride, int *type);
-attribute_deprecated
-int av_frame_set_qp_table(AVFrame *f, AVBufferRef *buf, int stride, int type);
-#endif
-attribute_deprecated
-enum AVColorSpace av_frame_get_colorspace(const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_colorspace(AVFrame *frame, enum AVColorSpace val);
-attribute_deprecated
-enum AVColorRange av_frame_get_color_range(const AVFrame *frame);
-attribute_deprecated
-void    av_frame_set_color_range(AVFrame *frame, enum AVColorRange val);
-#endif
 
+#if FF_API_COLORSPACE_NAME
 /**
  * Get the name of a colorspace.
  * @return a static string identifying the colorspace; can be NULL.
+ * @deprecated use av_color_space_name()
  */
+attribute_deprecated
 const char *av_get_colorspace_name(enum AVColorSpace val);
-
+#endif
 /**
- * Allocate an AVFrame and set its fields to default values.  The resulting
- * struct must be freed using av_frame_free().
+ * 分配AVFrame并将其字段设置为默认值。必须使用av_frame_free（）释放生成的结构。
  *
- * @return An AVFrame filled with default values or NULL on failure.
+ * @return AVFrame填充了默认值或失败时为NULL。
  *
- * @note this only allocates the AVFrame itself, not the data buffers. Those
- * must be allocated through other means, e.g. with av_frame_get_buffer() or
- * manually.
+ * @note 这只分配AVFrame本身，而不是数据缓冲区。
+ *       这些必须通过其他方式分配，例如使用av_frame_get_buffer（）或手动分配。
  */
 AVFrame *av_frame_alloc(void);
 
 /**
- * Free the frame and any dynamically allocated objects in it,
- * e.g. extended_data. If the frame is reference counted, it will be
- * unreferenced first.
- *
- * @param frame frame to be freed. The pointer will be set to NULL.
+ * 释放帧和其中任何动态分配的对象，
+ * e.g.扩展数据。如果帧是引用计数的，则首先将取消引用。
+ * @param 要释放的帧帧。指针将设置为NULL。
  */
 void av_frame_free(AVFrame **frame);
 
@@ -785,7 +748,7 @@ int av_frame_ref(AVFrame *dst, const AVFrame *src);
 AVFrame *av_frame_clone(const AVFrame *src);
 
 /**
- * Unreference all the buffers referenced by frame and reset the frame fields.
+ * 取消引用帧引用的所有缓冲区并重置帧字段。
  */
 void av_frame_unref(AVFrame *frame);
 
@@ -804,7 +767,7 @@ void av_frame_move_ref(AVFrame *dst, AVFrame *src);
  * The following fields must be set on frame before calling this function:
  * - format (pixel format for video, sample format for audio)
  * - width and height for video
- * - nb_samples and channel_layout for audio
+ * - nb_samples and ch_layout for audio
  *
  * This function will fill AVFrame.data and AVFrame.buf arrays and, if
  * necessary, allocate and fill AVFrame.extended_data and AVFrame.extended_buf.
@@ -864,12 +827,11 @@ int av_frame_make_writable(AVFrame *frame);
 int av_frame_copy(AVFrame *dst, const AVFrame *src);
 
 /**
- * Copy only "metadata" fields from src to dst.
+ * 仅将“metadata”字段从src复制到dst。
  *
- * Metadata for the purpose of this function are those fields that do not affect
- * the data layout in the buffers.  E.g. pts, sample rate (for audio) or sample
- * aspect ratio (for video), but not width/height or channel layout.
- * Side data is also copied.
+ * 用于此函数的元数据是那些不影响缓冲区中的数据布局的字段。
+ * 例如，pts，采样率(音频)或采样长宽比(视频)，但不是宽度/高度或频道布局。
+ * 侧数据也会被复制。
  */
 int av_frame_copy_props(AVFrame *dst, const AVFrame *src);
 
@@ -894,7 +856,7 @@ AVBufferRef *av_frame_get_plane_buffer(AVFrame *frame, int plane);
  */
 AVFrameSideData *av_frame_new_side_data(AVFrame *frame,
                                         enum AVFrameSideDataType type,
-                                        int size);
+                                        size_t size);
 
 /**
  * Add a new side data to a frame from an existing AVBufferRef
@@ -920,8 +882,7 @@ AVFrameSideData *av_frame_get_side_data(const AVFrame *frame,
                                         enum AVFrameSideDataType type);
 
 /**
- * If side data of the supplied type exists in the frame, free it and remove it
- * from the frame.
+ * Remove and free all side data instances of the given type.
  */
 void av_frame_remove_side_data(AVFrame *frame, enum AVFrameSideDataType type);
 

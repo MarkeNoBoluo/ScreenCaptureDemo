@@ -30,9 +30,16 @@
 #include <stdint.h>
 
 #include "libavutil/avutil.h"
+#include "libavutil/frame.h"
 #include "libavutil/log.h"
 #include "libavutil/pixfmt.h"
+#include "version_major.h"
+#ifndef HAVE_AV_CONFIG_H
+/* When included as part of the ffmpeg build, only include the major version
+ * to avoid unnecessary rebuilds. When included externally, keep including
+ * the full version information. */
 #include "version.h"
+#endif
 
 /**
  * @defgroup libsws libswscale
@@ -157,14 +164,13 @@ av_warn_unused_result
 int sws_init_context(struct SwsContext *sws_context, SwsFilter *srcFilter, SwsFilter *dstFilter);
 
 /**
- * Free the swscaler context swsContext.
- * If swsContext is NULL, then does nothing.
+ * 释放swscaler上下文swsContext。
+ * 如果swsContext为NULL，则不执行任何操作。
  */
 void sws_freeContext(struct SwsContext *swsContext);
 
 /**
- * Allocate and return an SwsContext. You need it to perform
- * scaling/conversion operations using sws_scale().
+ * 分配并返回一个SwsContext。您需要它来使用sws_scale()执行缩放/转换操作。
  *
  * @param srcW the width of the source image
  * @param srcH the height of the source image
@@ -189,34 +195,115 @@ struct SwsContext *sws_getContext(int srcW, int srcH, enum AVPixelFormat srcForm
                                   SwsFilter *dstFilter, const double *param);
 
 /**
- * Scale the image slice in srcSlice and put the resulting scaled
- * slice in the image in dst. A slice is a sequence of consecutive
- * rows in an image.
+ * 在srcSlice中缩放图像切片，并将生成的缩放切片放入dst中的图像中。
+ * 切片是图像中连续行的序列。
  *
- * Slices have to be provided in sequential order, either in
- * top-bottom or bottom-top order. If slices are provided in
- * non-sequential order the behavior of the function is undefined.
+ * 切片必须按顺序提供，可以是自上而下，也可以是自下而上。
+ * 如果切片是按非顺序提供的，则函数的行为是未定义的。
  *
- * @param c         the scaling context previously created with
- *                  sws_getContext()
- * @param srcSlice  the array containing the pointers to the planes of
- *                  the source slice
- * @param srcStride the array containing the strides for each plane of
- *                  the source image
- * @param srcSliceY the position in the source image of the slice to
- *                  process, that is the number (counted starting from
- *                  zero) in the image of the first row of the slice
- * @param srcSliceH the height of the source slice, that is the number
- *                  of rows in the slice
- * @param dst       the array containing the pointers to the planes of
- *                  the destination image
- * @param dstStride the array containing the strides for each plane of
- *                  the destination image
- * @return          the height of the output slice
+ * @param c         先前使用sws_getContext（）创建的缩放上下文
+ * @param srcSlice  包含指向源切片平面的指针的数组
+ * @param srcStride 包含源图像每个平面步幅的数组
+ * @param srcSliceY 要处理的切片在源图像中的位置，即切片第一行图像中的数字（从零开始计数）
+ * @param srcSliceH 源切片的高度，即切片中的行数
+ * @param dst       包含指向目标图像平面的指针的数组
+ * @param dstStride 包含目标图像每个平面的步幅的数组
+ * @return          输出切片的高度
  */
 int sws_scale(struct SwsContext *c, const uint8_t *const srcSlice[],
               const int srcStride[], int srcSliceY, int srcSliceH,
               uint8_t *const dst[], const int dstStride[]);
+
+/**
+ * Scale source data from src and write the output to dst.
+ *
+ * This is merely a convenience wrapper around
+ * - sws_frame_start()
+ * - sws_send_slice(0, src->height)
+ * - sws_receive_slice(0, dst->height)
+ * - sws_frame_end()
+ *
+ * @param dst The destination frame. See documentation for sws_frame_start() for
+ *            more details.
+ * @param src The source frame.
+ *
+ * @return 0 on success, a negative AVERROR code on failure
+ */
+int sws_scale_frame(struct SwsContext *c, AVFrame *dst, const AVFrame *src);
+
+/**
+ * Initialize the scaling process for a given pair of source/destination frames.
+ * Must be called before any calls to sws_send_slice() and sws_receive_slice().
+ *
+ * This function will retain references to src and dst, so they must both use
+ * refcounted buffers (if allocated by the caller, in case of dst).
+ *
+ * @param dst The destination frame.
+ *
+ *            The data buffers may either be already allocated by the caller or
+ *            left clear, in which case they will be allocated by the scaler.
+ *            The latter may have performance advantages - e.g. in certain cases
+ *            some output planes may be references to input planes, rather than
+ *            copies.
+ *
+ *            Output data will be written into this frame in successful
+ *            sws_receive_slice() calls.
+ * @param src The source frame. The data buffers must be allocated, but the
+ *            frame data does not have to be ready at this point. Data
+ *            availability is then signalled by sws_send_slice().
+ * @return 0 on success, a negative AVERROR code on failure
+ *
+ * @see sws_frame_end()
+ */
+int sws_frame_start(struct SwsContext *c, AVFrame *dst, const AVFrame *src);
+
+/**
+ * Finish the scaling process for a pair of source/destination frames previously
+ * submitted with sws_frame_start(). Must be called after all sws_send_slice()
+ * and sws_receive_slice() calls are done, before any new sws_frame_start()
+ * calls.
+ */
+void sws_frame_end(struct SwsContext *c);
+
+/**
+ * Indicate that a horizontal slice of input data is available in the source
+ * frame previously provided to sws_frame_start(). The slices may be provided in
+ * any order, but may not overlap. For vertically subsampled pixel formats, the
+ * slices must be aligned according to subsampling.
+ *
+ * @param slice_start first row of the slice
+ * @param slice_height number of rows in the slice
+ *
+ * @return a non-negative number on success, a negative AVERROR code on failure.
+ */
+int sws_send_slice(struct SwsContext *c, unsigned int slice_start,
+                   unsigned int slice_height);
+
+/**
+ * Request a horizontal slice of the output data to be written into the frame
+ * previously provided to sws_frame_start().
+ *
+ * @param slice_start first row of the slice; must be a multiple of
+ *                    sws_receive_slice_alignment()
+ * @param slice_height number of rows in the slice; must be a multiple of
+ *                     sws_receive_slice_alignment(), except for the last slice
+ *                     (i.e. when slice_start+slice_height is equal to output
+ *                     frame height)
+ *
+ * @return a non-negative number if the data was successfully written into the output
+ *         AVERROR(EAGAIN) if more input data needs to be provided before the
+ *                         output can be produced
+ *         another negative AVERROR code on other kinds of scaling failure
+ */
+int sws_receive_slice(struct SwsContext *c, unsigned int slice_start,
+                      unsigned int slice_height);
+
+/**
+ * @return alignment required for output slices requested with sws_receive_slice().
+ *         Slice offsets and sizes passed to sws_receive_slice() must be
+ *         multiples of the value returned from this function.
+ */
+unsigned int sws_receive_slice_alignment(const struct SwsContext *c);
 
 /**
  * @param dstRange flag indicating the while-black range of the output (1=jpeg / 0=mpeg)
@@ -226,14 +313,22 @@ int sws_scale(struct SwsContext *c, const uint8_t *const srcSlice[],
  * @param brightness 16.16 fixed point brightness correction
  * @param contrast 16.16 fixed point contrast correction
  * @param saturation 16.16 fixed point saturation correction
+#if LIBSWSCALE_VERSION_MAJOR > 6
+ * @return negative error code on error, non negative otherwise
+#else
  * @return -1 if not supported
+#endif
  */
 int sws_setColorspaceDetails(struct SwsContext *c, const int inv_table[4],
                              int srcRange, const int table[4], int dstRange,
                              int brightness, int contrast, int saturation);
 
 /**
+#if LIBSWSCALE_VERSION_MAJOR > 6
+ * @return negative error code on error, non negative otherwise
+#else
  * @return -1 if not supported
+#endif
  */
 int sws_getColorspaceDetails(struct SwsContext *c, int **inv_table,
                              int *srcRange, int **table, int *dstRange,
@@ -260,17 +355,6 @@ void sws_scaleVec(SwsVector *a, double scalar);
  */
 void sws_normalizeVec(SwsVector *a, double height);
 
-#if FF_API_SWS_VECTOR
-attribute_deprecated SwsVector *sws_getConstVec(double c, int length);
-attribute_deprecated SwsVector *sws_getIdentityVec(void);
-attribute_deprecated void sws_convVec(SwsVector *a, SwsVector *b);
-attribute_deprecated void sws_addVec(SwsVector *a, SwsVector *b);
-attribute_deprecated void sws_subVec(SwsVector *a, SwsVector *b);
-attribute_deprecated void sws_shiftVec(SwsVector *a, int shift);
-attribute_deprecated SwsVector *sws_cloneVec(SwsVector *a);
-attribute_deprecated void sws_printVec2(SwsVector *a, AVClass *log_ctx, int log_level);
-#endif
-
 void sws_freeVec(SwsVector *a);
 
 SwsFilter *sws_getDefaultFilter(float lumaGBlur, float chromaGBlur,
@@ -280,16 +364,15 @@ SwsFilter *sws_getDefaultFilter(float lumaGBlur, float chromaGBlur,
 void sws_freeFilter(SwsFilter *filter);
 
 /**
- * Check if context can be reused, otherwise reallocate a new one.
+ * 获取缓存的图像转换上下文。首先校验参数是否一致，如果校验不通过就释放资源；
+ * 然后判断上下文是否存在，如果存在直接复用，如不存在进行分配、初始化操作
  *
- * If context is NULL, just calls sws_getContext() to get a new
- * context. Otherwise, checks if the parameters are the ones already
- * saved in context. If that is the case, returns the current
- * context. Otherwise, frees context and gets a new context with
- * the new parameters.
+ * 如果context为NULL，只需调用sws_getContext（）来获取新上下文。
+ * 否则，检查参数是否已保存在上下文中。
+ * 如果是这样，则返回当前上下文。
+ * 否则，释放上下文并使用新参数获取新上下文。
  *
- * Be warned that srcFilter and dstFilter are not checked, they
- * are assumed to remain the same.
+ * 请注意，未选中srcFilter和dstFilter，它们假定保持不变。
  */
 struct SwsContext *sws_getCachedContext(struct SwsContext *context,
                                         int srcW, int srcH, enum AVPixelFormat srcFormat,

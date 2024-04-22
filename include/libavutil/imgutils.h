@@ -27,8 +27,10 @@
  * @{
  */
 
-#include "avutil.h"
+#include <stddef.h>
+#include <stdint.h>
 #include "pixdesc.h"
+#include "pixfmt.h"
 #include "rational.h"
 
 /**
@@ -59,13 +61,26 @@ void av_image_fill_max_pixsteps(int max_pixsteps[4], int max_pixstep_comps[4],
 int av_image_get_linesize(enum AVPixelFormat pix_fmt, int width, int plane);
 
 /**
- * Fill plane linesizes for an image with pixel format pix_fmt and
- * width width.
+ * 使用像素格式pix_fmt和宽度宽度填充图像的平面线条大小。
  *
  * @param linesizes array to be filled with the linesize for each plane
  * @return >= 0 in case of success, a negative error code otherwise
  */
 int av_image_fill_linesizes(int linesizes[4], enum AVPixelFormat pix_fmt, int width);
+
+/**
+ * Fill plane sizes for an image with pixel format pix_fmt and height height.
+ *
+ * @param size the array to be filled with the size of each image plane
+ * @param linesizes the array containing the linesize for each
+ *        plane, should be filled by av_image_fill_linesizes()
+ * @return >= 0 in case of success, a negative error code otherwise
+ *
+ * @note The linesize parameters have the type ptrdiff_t here, while they are
+ *       int for av_image_fill_linesizes().
+ */
+int av_image_fill_plane_sizes(size_t size[4], enum AVPixelFormat pix_fmt,
+                              int height, const ptrdiff_t linesizes[4]);
 
 /**
  * Fill plane data pointers for an image with pixel format pix_fmt and
@@ -109,6 +124,24 @@ int av_image_alloc(uint8_t *pointers[4], int linesizes[4],
 void av_image_copy_plane(uint8_t       *dst, int dst_linesize,
                          const uint8_t *src, int src_linesize,
                          int bytewidth, int height);
+
+/**
+ * Copy image data located in uncacheable (e.g. GPU mapped) memory. Where
+ * available, this function will use special functionality for reading from such
+ * memory, which may result in greatly improved performance compared to plain
+ * av_image_copy_plane().
+ *
+ * bytewidth must be contained by both absolute values of dst_linesize
+ * and src_linesize, otherwise the function behavior is undefined.
+ *
+ * @note The linesize parameters have the type ptrdiff_t here, while they are
+ *       int for av_image_copy_plane().
+ * @note On x86, the linesizes currently need to be aligned to the cacheline
+ *       size (i.e. 64) to get improved performance.
+ */
+void av_image_copy_plane_uc_from(uint8_t       *dst, ptrdiff_t dst_linesize,
+                                 const uint8_t *src, ptrdiff_t src_linesize,
+                                 ptrdiff_t bytewidth, int height);
 
 /**
  * Copy image in src_data to dst_data.
@@ -169,14 +202,13 @@ int av_image_fill_arrays(uint8_t *dst_data[4], int dst_linesize[4],
                          enum AVPixelFormat pix_fmt, int width, int height, int align);
 
 /**
- * Return the size in bytes of the amount of data required to store an
- * image with the given parameters.
+ * 返回使用给定参数存储图像所需数据量的字节大小。
  *
  * @param pix_fmt  the pixel format of the image
  * @param width    the width of the image in pixels
  * @param height   the height of the image in pixels
- * @param align    the assumed linesize alignment
- * @return the buffer size in bytes, a negative error code in case of failure
+ * @param align    假定的行大小对齐
+ * @return 缓冲区大小（以字节为单位），出现故障时为负错误代码
  */
 int av_image_get_buffer_size(enum AVPixelFormat pix_fmt, int width, int height, int align);
 
